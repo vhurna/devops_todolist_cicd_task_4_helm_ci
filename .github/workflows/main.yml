@@ -1,5 +1,5 @@
 name: python-deployment
-run-name: ${{ github.actor }} - ${{ github.ref_name }} - ${{ github.sha }}
+run-name: ${{ github.actor }} – ${{ github.ref_name }} – ${{ github.sha }}
 
 on:
   push:
@@ -14,11 +14,13 @@ env:
 jobs:
   checkout:
     runs-on: ubuntu-latest
+    outputs:
+      repo-artifact: repo
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Upload repo artifact
+      - name: Upload repo as artifact
         uses: actions/upload-artifact@v4
         with:
           name: repo
@@ -56,27 +58,19 @@ jobs:
           coverage run --source='.' manage.py test
           coverage report
 
-      - name: Linting
-        run: flake8 . --show-source --statistics --exit-zero
-
-      - name: Check complexity
-        run: flake8 . --exit-zero --max-complexity=6
-
-      - name: Upload python artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-artifacts
-          path: .
+      - name: Lint & complexity check
+        run: |
+          flake8 . --show-source --statistics --exit-zero --max-complexity=6
 
   docker-ci:
     if: github.ref_name == 'main'
-    needs: python-ci
+    needs: checkout
     runs-on: ubuntu-latest
     steps:
-      - name: Download python artifacts
+      - name: Download repo
         uses: actions/download-artifact@v4
         with:
-          name: python-artifacts
+          name: repo
           path: .
 
       - name: Log in to Docker Hub
@@ -88,7 +82,8 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
-          context: ./src
+          context: .
+          file: ./src/Dockerfile
           push: true
           tags: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DockerImageName }}:${{ github.sha }}
 
@@ -106,17 +101,20 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v4.2.0
 
-      - name: Template Helm chart
-        run: helm template kube2py ./helm-charts/kube2py -f ./helm-charts/kube2py/values.yaml
-
       - name: Lint Helm chart
-        run: helm lint ./helm-charts/kube2py
+        run: helm lint ./helm-charts/todoapp
+
+      - name: Template Helm chart
+        run: |
+          helm template todoapp \
+            ./helm-charts/todoapp \
+            -f ./helm-charts/todoapp/values.yaml
 
       - name: Package Helm chart
-        run: helm package ./helm-charts/kube2py
+        run: helm package ./helm-charts/todoapp
 
       - name: Upload Helm package
         uses: actions/upload-artifact@v4
         with:
           name: helm-package
-          path: '*.tgz'
+          path: 'todoapp-*.tgz'
